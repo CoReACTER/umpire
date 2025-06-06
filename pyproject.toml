@@ -1,0 +1,29 @@
+[project]
+name = "UMPIRE"
+description = "Unsupervised Material Phase Identification for Reaction Exploration (UMPIRE) is a model aimed at identifying (potentially novel or unknown) material phases from molecular dynamics simulations using unsupervised learning."
+version = "0.0.1"
+authors = [
+    { name = "Evan Walter Clark Spotte-Smith", email = "espottesmith@gmail.com" }
+]
+maintainers = [
+    { name = "Evan Walter Clark Spotte-Smith", email = "espottesmith@gmail.com" }
+]
+dependencies = [
+    "torch==2.7.0",
+    "torch_geometric",
+    "lightning",
+    "e3nn==0.5.6",
+    "ase",
+    "fairchem-core==2.2.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit",
+    "black",
+    "pytest",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
