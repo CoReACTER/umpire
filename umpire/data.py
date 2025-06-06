@@ -20,6 +20,10 @@ from umpire.utils import (
     LinearSigmoidSmearing,
     SigmoidSmearing,
     SiLUSmearing,
+    get_node_direction_expansion,
+    convert_neighbor_list,
+    map_neighbor_list,
+    get_attn_mask
 )
 from umpire.config import UmpireConfig
 
@@ -39,8 +43,8 @@ class ChemicalGraphData:
     neighbor_list: (N, max_nei)
     neighbor_mask: (N, max_nei)
     node_batch: (N)
-    node_padding_mask: (N)
-    graph_padding_mask: (num_graphs)
+    # node_padding_mask: (N)
+    # graph_padding_mask: (num_graphs)
     """
 
     atomic_numbers: torch.Tensor
@@ -52,8 +56,8 @@ class ChemicalGraphData:
     neighbor_list: torch.Tensor
     neighbor_mask: torch.Tensor
     node_batch: torch.Tensor
-    node_padding_mask: torch.Tensor
-    graph_padding_mask: torch.Tensor
+    # node_padding_mask: torch.Tensor
+    # graph_padding_mask: torch.Tensor
 
 
 torch.export.register_dataclass(
@@ -61,7 +65,7 @@ torch.export.register_dataclass(
 )
 
 
-def data_from_ase_atoms(atoms: List[Atoms] | Trajectory, config: UmpireConfig, device: str | torch.device | int) -> ChemicalGraphData:
+def data_from_ase_atoms(atoms: List[Atoms] | Trajectory, config: UmpireConfig, device: str | torch.device | int, batch: torch.Tensor | None = None) -> ChemicalGraphData:
     """
     Construct a ChemicalGraphData object from a collection of ASE Atoms objects
 
@@ -127,7 +131,8 @@ def data_from_ase_atoms(atoms: List[Atoms] | Trajectory, config: UmpireConfig, d
         charge=charge,
         spin=spin,
         fixed=fixed,
-        tags=tags
+        tags=tags,
+        batch=batch
     )
 
     graph_info = generate_graph(
@@ -168,9 +173,61 @@ def data_from_ase_atoms(atoms: List[Atoms] | Trajectory, config: UmpireConfig, d
     # edge distance expansion (ref: scn)
     edge_distance_expansion = edge_distance_expansion_func(edge_distance)
 
-    # TODO: you are here
+    # node direction expansion
+    node_direction_expansion = get_node_direction_expansion(
+        distance_vec=edge_distance_vec,
+        edge_index=edge_index,
+        lmax=config.node_direction_expansion_size - 1,
+        num_nodes=fill_data.num_nodes,
+    )
 
+    # convert to neighbor list
+    neighbor_list, neighbor_mask, index_mapping = convert_neighbor_list(
+        edge_index, config.max_neighbors, fill_data.num_nodes
+    )
+
+    # map neighbor list
+    map_neighbor_list_ = partial(
+        map_neighbor_list,
+        index_mapping=index_mapping,
+        max_neighbors=config.max_neighbors,
+        num_nodes=fill_data.num_nodes,
+    )
+    edge_direction = map_neighbor_list_(edge_direction)
+    edge_distance_expansion = map_neighbor_list_(edge_distance_expansion)
+
+    node_batch = fill_data.batch
+
+    # get attention mask
+    attn_mask, angle_embedding = get_attn_mask(
+        edge_direction=edge_direction,
+        neighbor_mask=neighbor_mask,
+        num_heads=config.atten_num_heads,
+        use_angle_embedding=config.use_angle_embedding,
+    )
+
+    if config.atten_name in ["memory_efficient", "flash", "math"]:
+        torch.backends.cuda.enable_flash_sdp(config.atten_name == "flash")
+        torch.backends.cuda.enable_mem_efficient_sdp(
+            config.atten_name == "memory_efficient"
+        )
+        torch.backends.cuda.enable_math_sdp(config.atten_name == "math")
+    else:
+        raise NotImplementedError(
+            f"Attention name {config.atten_name} not implemented"
+        )
     
+    return ChemicalGraphData(
+        atomic_numbers=atomic_numbers,
+        edge_distance_expansion=edge_distance_expansion,
+        edge_direction=edge_direction,
+        node_direction_expansion=node_direction_expansion,
+        attn_mask=attn_mask,
+        angle_embedding=angle_embedding,
+        neighbor_list=neighbor_list,
+        neighbor_mask=neighbor_mask,
+        node_batch=node_batch
+    )
 
 
 def data_from_pmg_structures(structs: List[Structure], config: UmpireConfig) -> ChemicalGraphData:
