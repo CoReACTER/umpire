@@ -5,6 +5,7 @@ from ase.io import read
 from ase.io.trajectory import Trajectory
 
 from pymatgen.core.structure import Structure
+from pymatgen.io.ase import AseAtomsAdaptor
 
 import torch
 
@@ -65,12 +66,21 @@ torch.export.register_dataclass(
 )
 
 
-def data_from_ase_atoms(atoms: List[Atoms] | Trajectory, config: UmpireConfig, device: str | torch.device | int, batch: torch.Tensor | None = None) -> ChemicalGraphData:
+def data_from_ase_atoms(
+    atoms: List[Atoms] | Trajectory,
+    config: UmpireConfig,
+    device: str | torch.device | int,
+    batch: torch.Tensor | None = None
+) -> ChemicalGraphData:
     """
     Construct a ChemicalGraphData object from a collection of ASE Atoms objects
 
     Args:
         atoms (List[Atoms] | Trajectory): Collection of snapshots to be compiled into a dataset
+        config (UmpireConfig): Config object
+        device (str | torch.device | int): Either a device object or a reference to a torch-recognized device
+        batch (torch.Tensor | None): Either information regarding which samples will be included in which batch, or
+            None (default)
 
     Returns:
         ChemicalGraphData
@@ -230,30 +240,54 @@ def data_from_ase_atoms(atoms: List[Atoms] | Trajectory, config: UmpireConfig, d
     )
 
 
-def data_from_pmg_structures(structs: List[Structure], config: UmpireConfig) -> ChemicalGraphData:
+def data_from_pmg_structures(
+    structs: List[Structure],
+    config: UmpireConfig,
+    device: str | torch.device | int,
+    batch: torch.Tensor | None = None
+) -> ChemicalGraphData:
     """
+    Construct a ChemicalGraphData object from a collection of pymatgen Structure objects
+
+    Args:
+        atoms (List[Structure]): Collection of snapshots to be compiled into a dataset
+        config (UmpireConfig): Config object
+        device (str | torch.device | int): Either a device object or a reference to a torch-recognized device
+        batch (torch.Tensor | None): Either information regarding which samples will be included in which batch, or
+            None (default)
+
+    Returns:
+        ChemicalGraphData
 
     """
-    pass
+    
+    ad = AseAtomsAdaptor()
+
+    atoms = [ad.get_atoms(struct) for struct in structs]
+
+    return data_from_ase_atoms(atoms, config, device, batch=batch)
 
 
-def data_from_trajectory_file(traj: str | Path, config: UmpireConfig) -> ChemicalGraphData:
+def data_from_trajectory_file(
+    traj: str | Path,
+    config: UmpireConfig,
+    device: str | torch.device | int,
+    batch: torch.Tensor | None = None
+) -> ChemicalGraphData:
     """
     Construct a ChemicalGraphData object from a single molecular dynamics trajectory file
 
     Args:
         traj (str | Path): Either a path to a trajectory file
-        config (UmpireConfig): configuration for data processing
+        config (UmpireConfig): Config object
+        device (str | torch.device | int): Either a device object or a reference to a torch-recognized device
+        batch (torch.Tensor | None): Either information regarding which samples will be included in which batch, or
+            None (default)
 
     Returns:
         data (ChemicalGraphData)
 
     """
-    
 
-
-def data_from_trajectories(trajs: List[str] | List[Path], config: UmpireConfig) -> ChemicalGraphData:
-    """
-
-    """
-    pass
+    atoms = Trajectory(str(traj))
+    return data_from_ase_atoms(atoms, config, device, batch=batch)
